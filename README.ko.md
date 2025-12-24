@@ -110,7 +110,14 @@ bash yt_whisper.sh
    * `large` (1550M, 1배 속도, ~10GB RAM)
    * `turbo` (가장 빠름, 좋은 품질)
 3. **언어** (`ko`, `en`, 또는 `auto`)
-4. **Ollama 모델** (기본값: `llama3.1`)
+4. **Ollama 모델**
+
+   * `llama3.1` (기본값, 균형잡힌 성능)
+   * `qwen2.5` (기술 요약에 최적)
+   * `mistral` (빠른 요약)
+   * `llama3.2` (빠른 요약)
+   * `phi4` (저사양용)
+   * `custom` (직접 모델명 입력)
 5. **출력 디렉토리** (기본값: `~/Desktop`)
 
 ---

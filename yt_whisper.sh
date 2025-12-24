@@ -78,8 +78,28 @@ esac
 read -r -p "Language (ko/en/auto) [ko]: " LANG
 LANG="${LANG:-ko}"
 
-read -r -p "Ollama model [llama3.1]: " OLLAMA_MODEL
-OLLAMA_MODEL="${OLLAMA_MODEL:-llama3.1}"
+echo "Choose Ollama model:"
+echo "  1) llama3.1  (기본값, 균형잡힌 성능)"
+echo "  2) qwen2.5   (기술 요약에 최적)"
+echo "  3) mistral   (빠른 요약)"
+echo "  4) llama3.2  (빠른 요약)"
+echo "  5) phi4      (저사양용)"
+echo "  6) custom    (직접 입력)"
+read -r -p "Model [1]: " OLLAMA_CHOICE
+OLLAMA_CHOICE="${OLLAMA_CHOICE:-1}"
+
+case "$OLLAMA_CHOICE" in
+  1) OLLAMA_MODEL="llama3.1" ;;
+  2) OLLAMA_MODEL="qwen2.5" ;;
+  3) OLLAMA_MODEL="mistral" ;;
+  4) OLLAMA_MODEL="llama3.2" ;;
+  5) OLLAMA_MODEL="phi4" ;;
+  6) 
+    read -r -p "Enter model name: " CUSTOM_MODEL
+    OLLAMA_MODEL="${CUSTOM_MODEL:-llama3.1}"
+    ;;
+  *) OLLAMA_MODEL="llama3.1" ;;
+esac
 
 read -r -p "Output directory [~/Desktop]: " OUTPUT_BASE
 OUTPUT_BASE="${OUTPUT_BASE:-${HOME}/Desktop}"

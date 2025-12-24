@@ -110,7 +110,14 @@ You will be prompted for:
    * `large` (1550M, 1x speed, ~10GB RAM)
    * `turbo` (fastest, good quality)
 3. **Language** (`ko`, `en`, or `auto`)
-4. **Ollama model** (default: `llama3.1`)
+4. **Ollama model**
+
+   * `llama3.1` (default, balanced performance)
+   * `qwen2.5` (optimized for technical content)
+   * `mistral` (fast summarization)
+   * `llama3.2` (fast summarization)
+   * `phi4` (low-resource)
+   * `custom` (enter your own model name)
 5. **Output directory** (default: `~/Desktop`)
 
 ---
