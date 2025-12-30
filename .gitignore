@@ -1,0 +1,8 @@
+# Output directories from yt_whisper script
+/yt_whisper_*/
+\yt_whisper_*/
+
+# Common temporary files
+*.tmp
+*.log
+.DS_Store
