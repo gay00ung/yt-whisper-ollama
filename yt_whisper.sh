@@ -182,15 +182,12 @@ if [[ -n "$MP3" ]]; then
     fi
   fi
 else
-  echo "Downloading..."
-  echo "DEBUG: About to run yt-dlp with URL: $URL"
-  echo "DEBUG: Current directory: $(pwd)"
   yt-dlp -x --audio-format mp3 --audio-quality 0 --no-playlist "$URL"
-  echo "DEBUG: yt-dlp finished, checking for MP3..."
+
   set +e
   MP3="$(find . -maxdepth 1 -name "*.mp3" -type f 2>/dev/null | head -n 1 | sed 's|^\./||')"
   set -e
-  echo "DEBUG: MP3 found: $MP3"
+
   if [[ -z "$MP3" ]]; then
     echo ""
     echo "ERROR: Download failed. Check URL or network connection."
@@ -239,9 +236,9 @@ echo "==> Summarizing with Ollama ($OLLAMA_MODEL)..."
 case "$SUMMARY_STYLE" in
   1) # 표준
     if [[ "$TRANSCRIPT_LANG" == "ko" ]]; then
-      SUMMARY_PROMPT=$'다음은 유튜브 영상 전사 텍스트다.\n1) 핵심 요약 7줄\n2) 주요 포인트 5개 불릿\n3) 한 줄 결론\n한국어로 출력해라.'
+      SUMMARY_PROMPT=$'아래 유튜브 영상의 전사 텍스트를 읽고 실제 내용을 바탕으로 요약해라. 템플릿이나 빈 칸 없이 구체적인 내용으로 채워라.\n\n형식:\n1. 핵심 요약 (7줄): 영상의 주요 내용을 7개 문장으로 요약\n2. 주요 포인트 (5개): 중요한 포인트 5개를 불릿으로 나열\n3. 한 줄 결론: 영상의 핵심 메시지를 한 문장으로 표현\n\n한국어로 작성하고, 실제 영상 내용을 구체적으로 담아라.'
     else
-      SUMMARY_PROMPT=$'This is a YouTube video transcript.\n1) Core summary in 7 lines\n2) 5 key bullet points\n3) One-line conclusion\nRespond in English.'
+      SUMMARY_PROMPT=$'Read the YouTube video transcript below and summarize the ACTUAL content. Fill in with specific details from the video, not templates or blanks.\n\nFormat:\n1. Core Summary (7 lines): Summarize the main content in 7 sentences\n2. Key Points (5 items): List 5 important points as bullets\n3. One-line Conclusion: Express the core message in one sentence\n\nWrite in English and include specific details from the actual video content.'
     fi
     ;;
   2) # 간단
