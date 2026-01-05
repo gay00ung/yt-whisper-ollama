@@ -1,0 +1,17 @@
+# ~/.yt_whisper.conf
+# yt-whisper 스크립트 기본 설정 파일
+
+# Whisper 모델 (tiny, base, small, medium, large, turbo)
+WHISPER_MODEL=small
+
+# Ollama 모델
+OLLAMA_MODEL=llama3.1
+
+# 언어 (ko, en, auto)
+TRANSCRIPT_LANG=ko
+
+# 요약 스타일 (1:표준, 2:간단, 3:상세, 4:학습용, 5:블로그)
+SUMMARY_STYLE=1
+
+# 출력 디렉토리
+OUTPUT_BASE=~/Desktop

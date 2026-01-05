@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eo pipefail
 
 # ---------- utils ----------
 has() { command -v "$1" >/dev/null 2>&1; }
@@ -51,6 +51,13 @@ if ! ollama list >/dev/null 2>&1; then
   fi
 fi
 
+# ---------- load config ----------
+CONFIG_FILE="${HOME}/.yt_whisper.conf"
+if [[ -f "$CONFIG_FILE" ]]; then
+  echo "Loading config from $CONFIG_FILE"
+  source "$CONFIG_FILE"
+fi
+
 # ---------- input ----------
 read -r -p "YouTube URL: " URL
 [[ -z "${URL}" ]] && { echo "ERROR: URL is empty."; exit 1; }
@@ -62,8 +69,8 @@ echo "  3) small  (244M, ~4x speed, ~2GB RAM) [추천]"
 echo "  4) medium (769M, ~2x speed, ~5GB RAM)"
 echo "  5) large  (1550M, 1x speed, ~10GB RAM)"
 echo "  6) turbo  (fastest, good quality)"
-read -r -p "Model [3]: " MODEL_CHOICE
-MODEL_CHOICE="${MODEL_CHOICE:-3}"
+read -r -p "Model [${WHISPER_MODEL:-3}]: " MODEL_CHOICE
+MODEL_CHOICE="${MODEL_CHOICE:-${WHISPER_MODEL:-3}}"
 
 case "$MODEL_CHOICE" in
   1) WHISPER_MODEL="tiny" ;;
@@ -75,8 +82,12 @@ case "$MODEL_CHOICE" in
   *) WHISPER_MODEL="small" ;;
 esac
 
-read -r -p "Language (ko/en/auto) [ko]: " LANG
-LANG="${LANG:-ko}"
+read -r -p "Language (ko/en/auto) [ko]: " TRANSCRIPT_LANG_INPUT
+if [[ -z "$TRANSCRIPT_LANG_INPUT" ]]; then
+  TRANSCRIPT_LANG="ko"
+else
+  TRANSCRIPT_LANG="$TRANSCRIPT_LANG_INPUT"
+fi
 
 echo "Choose Ollama model:"
 echo "  1) llama3.1  (기본값, 균형잡힌 성능)"
@@ -85,7 +96,7 @@ echo "  3) mistral   (빠른 요약)"
 echo "  4) llama3.2  (빠른 요약)"
 echo "  5) phi4      (저사양용)"
 echo "  6) custom    (직접 입력)"
-read -r -p "Model [1]: " OLLAMA_CHOICE
+read -r -p "Model [${OLLAMA_MODEL:-1}]: " OLLAMA_CHOICE
 OLLAMA_CHOICE="${OLLAMA_CHOICE:-1}"
 
 case "$OLLAMA_CHOICE" in
@@ -101,39 +112,175 @@ case "$OLLAMA_CHOICE" in
   *) OLLAMA_MODEL="llama3.1" ;;
 esac
 
-read -r -p "Output directory [~/Desktop]: " OUTPUT_BASE
-OUTPUT_BASE="${OUTPUT_BASE:-${HOME}/Desktop}"
+# Ollama 모델 존재 확인 및 자동 pull
+echo "Checking Ollama model: $OLLAMA_MODEL"
+if ! ollama list | grep -q "^${OLLAMA_MODEL}" ; then
+  echo "Model '$OLLAMA_MODEL' not found locally. Pulling..."
+  if ! ollama pull "$OLLAMA_MODEL"; then
+    echo "ERROR: Failed to pull model '$OLLAMA_MODEL'."
+    echo "Please check model name or network connection."
+    exit 1
+  fi
+  echo "✓ Model '$OLLAMA_MODEL' ready"
+fi
+
+echo "Choose summary style:"
+echo "  1) 표준 (7줄 요약 + 5개 포인트 + 결론) [기본값]"
+echo "  2) 간단 (3줄 핵심 요약)"
+echo "  3) 상세 (챕터별 구분 + 타임라인)"
+echo "  4) 학습용 (Q&A 형식)"
+echo "  5) 블로그 (서론-본론-결론)"
+read -r -p "Style [${SUMMARY_STYLE:-1}]: " STYLE_CHOICE
+SUMMARY_STYLE="${STYLE_CHOICE:-${SUMMARY_STYLE:-1}}"
+
+read -r -p "Output directory [${OUTPUT_BASE:-~/Desktop}]: " OUTPUT_INPUT
+# 입력이 비어있으면 기본값 사용
+if [[ -z "$OUTPUT_INPUT" ]]; then
+  OUTPUT_BASE="${OUTPUT_BASE:-${HOME}/Desktop}"
+else
+  OUTPUT_BASE="$OUTPUT_INPUT"
+fi
 # Expand ~ to home directory
 OUTPUT_BASE="${OUTPUT_BASE/#\~/$HOME}"
 
 # ---------- workdir ----------
+# 출력 디렉토리가 없으면 생성
+mkdir -p "$OUTPUT_BASE"
+
+# 디스크 공간 체크 (최소 1GB 필요)
+AVAILABLE_MB=$(df "$OUTPUT_BASE" | tail -1 | awk '{print int($4/1024)}')
+if [[ $AVAILABLE_MB -lt 1024 ]]; then
+  echo "ERROR: Insufficient disk space. Available: ${AVAILABLE_MB}MB, Required: 1024MB"
+  exit 1
+fi
+
 OUTDIR="${OUTPUT_BASE}/yt_whisper_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$OUTDIR"
 cd "$OUTDIR"
 
 # ---------- download ----------
 echo "==> Downloading audio..."
-yt-dlp -x --audio-format mp3 --audio-quality 0 --no-playlist "$URL"
+# pipefail 때문에 ls 실패 시 스크립트 종료되는 것 방지
+set +e
+MP3="$(find . -maxdepth 1 -name "*.mp3" -type f 2>/dev/null | head -n 1 | sed 's|^\./||')"
+set -e
 
-MP3="$(ls -1 *.mp3 | head -n 1)"
+if [[ -n "$MP3" ]]; then
+  echo "Found existing MP3: $MP3"
+  read -r -p "Use existing file? (y/n) [y]: " USE_EXISTING
+  USE_EXISTING="${USE_EXISTING:-y}"
+  if [[ "$USE_EXISTING" != "y" ]]; then
+    rm -f *.mp3
+    echo "Downloading..."
+    yt-dlp -x --audio-format mp3 --audio-quality 0 --no-playlist "$URL"
+    set +e
+    MP3="$(find . -maxdepth 1 -name "*.mp3" -type f 2>/dev/null | head -n 1 | sed 's|^\./||')"
+    set -e
+    if [[ -z "$MP3" ]]; then
+      echo "ERROR: Download failed. Check URL or network connection."
+      exit 1
+    fi
+  fi
+else
+  echo "Downloading..."
+  echo "DEBUG: About to run yt-dlp with URL: $URL"
+  echo "DEBUG: Current directory: $(pwd)"
+  yt-dlp -x --audio-format mp3 --audio-quality 0 --no-playlist "$URL"
+  echo "DEBUG: yt-dlp finished, checking for MP3..."
+  set +e
+  MP3="$(find . -maxdepth 1 -name "*.mp3" -type f 2>/dev/null | head -n 1 | sed 's|^\./||')"
+  set -e
+  echo "DEBUG: MP3 found: $MP3"
+  if [[ -z "$MP3" ]]; then
+    echo ""
+    echo "ERROR: Download failed. Check URL or network connection."
+    echo "Try: brew upgrade yt-dlp"
+    exit 1
+  fi
+fi
+
 [[ -z "${MP3}" ]] && { echo "ERROR: mp3 not created."; exit 1; }
 
 # ---------- whisper ----------
-echo "==> Transcribing with Whisper ($WHISPER_MODEL)..."
-ARGS=( "$MP3" --task transcribe --model "$WHISPER_MODEL" --output_format txt --verbose False )
-[[ "$LANG" != "auto" ]] && ARGS+=( --language "$LANG" )
-whisper "${ARGS[@]}"
+set +e
+TXT="$(find . -maxdepth 1 -name "*.txt" -type f 2>/dev/null | head -n 1 | sed 's|^\./||')"
+set -e
 
-TXT="$(ls -1 *.txt | head -n 1)"
+if [[ -n "$TXT" ]]; then
+  echo "Found existing transcript: $TXT"
+  read -r -p "Use existing transcript? (y/n) [y]: " USE_EXISTING_TXT
+  USE_EXISTING_TXT="${USE_EXISTING_TXT:-y}"
+  if [[ "$USE_EXISTING_TXT" != "y" ]]; then
+    rm -f *.txt
+    echo "==> Transcribing with Whisper ($WHISPER_MODEL)..."
+    ARGS=( "$MP3" --task transcribe --model "$WHISPER_MODEL" --output_format txt --verbose False )
+    [[ "$TRANSCRIPT_LANG" != "auto" ]] && ARGS+=( --language "$TRANSCRIPT_LANG" )
+    whisper "${ARGS[@]}"
+    set +e
+    TXT="$(find . -maxdepth 1 -name "*.txt" -type f 2>/dev/null | head -n 1 | sed 's|^\./||')"
+    set -e
+  fi
+else
+  echo "==> Transcribing with Whisper ($WHISPER_MODEL)..."
+  ARGS=( "$MP3" --task transcribe --model "$WHISPER_MODEL" --output_format txt --verbose False )
+  [[ "$TRANSCRIPT_LANG" != "auto" ]] && ARGS+=( --language "$TRANSCRIPT_LANG" )
+  whisper "${ARGS[@]}"
+  set +e
+  TXT="$(find . -maxdepth 1 -name "*.txt" -type f 2>/dev/null | head -n 1 | sed 's|^\./||')"
+  set -e
+fi
+
 [[ -z "${TXT}" ]] && { echo "ERROR: transcript not created."; exit 1; }
 
 # ---------- summarize ----------
 echo "==> Summarizing with Ollama ($OLLAMA_MODEL)..."
-if [[ "$LANG" == "ko" ]]; then
-  SUMMARY_PROMPT=$'다음은 유튜브 영상 전사 텍스트다.\n1) 핵심 요약 7줄\n2) 주요 포인트 5개 불릿\n3) 한 줄 결론\n한국어로 출력해라.'
-else
-  SUMMARY_PROMPT=$'This is a YouTube video transcript.\n1) Core summary in 7 lines\n2) 5 key bullet points\n3) One-line conclusion\nRespond in English.'
-fi
+
+# 스타일별 프롬프트 생성
+case "$SUMMARY_STYLE" in
+  1) # 표준
+    if [[ "$TRANSCRIPT_LANG" == "ko" ]]; then
+      SUMMARY_PROMPT=$'다음은 유튜브 영상 전사 텍스트다.\n1) 핵심 요약 7줄\n2) 주요 포인트 5개 불릿\n3) 한 줄 결론\n한국어로 출력해라.'
+    else
+      SUMMARY_PROMPT=$'This is a YouTube video transcript.\n1) Core summary in 7 lines\n2) 5 key bullet points\n3) One-line conclusion\nRespond in English.'
+    fi
+    ;;
+  2) # 간단
+    if [[ "$TRANSCRIPT_LANG" == "ko" ]]; then
+      SUMMARY_PROMPT=$'다음은 유튜브 영상 전사 텍스트다.\n가장 중요한 핵심 내용 3줄로 간단명료하게 요약해라.\n한국어로 출력해라.'
+    else
+      SUMMARY_PROMPT=$'This is a YouTube video transcript.\nSummarize the most important points in 3 concise lines.\nRespond in English.'
+    fi
+    ;;
+  3) # 상세
+    if [[ "$TRANSCRIPT_LANG" == "ko" ]]; then
+      SUMMARY_PROMPT=$'다음은 유튜브 영상 전사 텍스트다.\n다음 형식으로 상세하게 정리해라:\n1) 전체 개요 (3줄)\n2) 챕터별 주요 내용 (최소 5개 챕터, 각 챕터마다 제목과 2-3줄 설명)\n3) 핵심 인사이트 (5개)\n4) 최종 결론\n한국어로 출력해라.'
+    else
+      SUMMARY_PROMPT=$'This is a YouTube video transcript.\nProvide a detailed breakdown:\n1) Overview (3 lines)\n2) Chapter-by-chapter breakdown (at least 5 chapters, with title and 2-3 line description each)\n3) Key insights (5 points)\n4) Final conclusion\nRespond in English.'
+    fi
+    ;;
+  4) # 학습용
+    if [[ "$TRANSCRIPT_LANG" == "ko" ]]; then
+      SUMMARY_PROMPT=$'다음은 유튜브 영상 전사 텍스트다.\n학습 자료 형식으로 정리해라:\n1) 핵심 질문 5개와 각각의 답변\n2) 중요한 개념/용어 설명 (5개)\n3) 실전 활용 팁 (3개)\n4) 추가 학습이 필요한 주제\n한국어로 출력해라.'
+    else
+      SUMMARY_PROMPT=$'This is a YouTube video transcript.\nFormat as study material:\n1) 5 key questions and answers\n2) Important concepts/terms explained (5 items)\n3) Practical tips (3 items)\n4) Topics for further study\nRespond in English.'
+    fi
+    ;;
+  5) # 블로그
+    if [[ "$TRANSCRIPT_LANG" == "ko" ]]; then
+      SUMMARY_PROMPT=$'다음은 유튜브 영상 전사 텍스트다.\n블로그 포스팅 형식으로 작성해라:\n1) 서론 (흥미를 끄는 도입부, 2-3줄)\n2) 본론 (주요 내용을 3-4개 섹션으로 나눠서 각 섹션마다 제목과 설명)\n3) 결론 (핵심 메시지와 행동 촉구, 2-3줄)\n한국어로 출력해라.'
+    else
+      SUMMARY_PROMPT=$'This is a YouTube video transcript.\nWrite in blog post format:\n1) Introduction (engaging opening, 2-3 lines)\n2) Body (divide into 3-4 sections with titles and descriptions)\n3) Conclusion (key message and call-to-action, 2-3 lines)\nRespond in English.'
+    fi
+    ;;
+  *) # 기본값 (표준)
+    if [[ "$TRANSCRIPT_LANG" == "ko" ]]; then
+      SUMMARY_PROMPT=$'다음은 유튜브 영상 전사 텍스트다.\n1) 핵심 요약 7줄\n2) 주요 포인트 5개 불릿\n3) 한 줄 결론\n한국어로 출력해라.'
+    else
+      SUMMARY_PROMPT=$'This is a YouTube video transcript.\n1) Core summary in 7 lines\n2) 5 key bullet points\n3) One-line conclusion\nRespond in English.'
+    fi
+    ;;
+esac
+
 cat "$TXT" | ollama run "$OLLAMA_MODEL" "$SUMMARY_PROMPT" > summary.txt
 
 # ---------- done ----------
