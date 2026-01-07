@@ -5,17 +5,18 @@
 
 A fully local YouTube transcription & summarization pipeline for macOS.
 
-This script downloads audio from a YouTube video, transcribes it using OpenAI Whisper, and summarizes the transcript using a local LLM via Ollama — all **offline**, with no cloud APIs.
+This script downloads audio from a YouTube video, transcribes it using **whisper.cpp** (5x faster than Python Whisper), and summarizes the transcript using a local LLM via Ollama — all **offline**, with no cloud APIs.
 
 ---
 
 ## Features
 
 - Download audio from YouTube
-- Transcribe speech to text using **Whisper (local)**
+- Transcribe speech to text using **whisper.cpp (5-10x faster)**
 - Summarize the transcript using a **local LLM (Ollama)**
 - Automatic dependency installation (Homebrew-based)
-- macOS & Apple Silicon friendly
+- macOS & Apple Silicon friendly (GPU accelerated)
+- **5-10x faster transcription** with whisper.cpp
 - No API keys, no external servers
 
 ---
@@ -43,9 +44,9 @@ It only **invokes existing open-source tools via CLI**.
   Used only as an external command-line tool  
   https://ffmpeg.org/
 
-- **OpenAI Whisper (CLI)** — speech-to-text transcription  
+- **whisper.cpp** — fast speech-to-text transcription (C++ implementation)  
   License: MIT  
-  https://github.com/openai/whisper
+  https://github.com/ggml-org/whisper.cpp
 
 - **Ollama** — local LLM runner for summarization  
   License: Apache 2.0  
@@ -109,8 +110,7 @@ You will be prompted for:
    * `medium` (769M, ~2x speed, ~5GB RAM)
    * `large` (1550M, 1x speed, ~10GB RAM)
    * `turbo` (fastest, good quality)
-3. **Language** (`ko`, `en`, or `auto`)
-4. **Ollama model**
+3. **Ollama model**
 
    * `llama3.1` (default, balanced performance)
    * `qwen2.5` (optimized for technical content)
@@ -118,7 +118,9 @@ You will be prompted for:
    * `llama3.2` (fast summarization)
    * `phi4` (low-resource)
    * `custom` (enter your own model name)
-5. **Output directory** (default: `~/Desktop`)
+4. **Summary style** (standard, brief, detailed, learning, blog)
+5. **Summary language** (Korean or English)
+6. **Output directory** (default: `~/Desktop`)
 
 ---
 
@@ -129,11 +131,11 @@ You will be prompted for:
    * Homebrew
    * yt-dlp
    * ffmpeg
-   * openai-whisper
+   * whisper-cpp
    * ollama
 2. Starts the Ollama server if not running
 3. Downloads YouTube audio as MP3
-4. Transcribes audio with Whisper
+4. Transcribes audio with whisper.cpp (auto language detection, 5-10x faster)
 5. Summarizes the transcript using Ollama
 6. Saves results to a timestamped folder in your chosen directory
 

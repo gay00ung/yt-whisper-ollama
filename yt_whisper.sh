@@ -82,12 +82,8 @@ case "$MODEL_CHOICE" in
   *) WHISPER_MODEL="small" ;;
 esac
 
-read -r -p "Language (ko/en/auto) [ko]: " TRANSCRIPT_LANG_INPUT
-if [[ -z "$TRANSCRIPT_LANG_INPUT" ]]; then
-  TRANSCRIPT_LANG="ko"
-else
-  TRANSCRIPT_LANG="$TRANSCRIPT_LANG_INPUT"
-fi
+# Whisper는 자동 언어 감지 사용
+TRANSCRIPT_LANG="auto"
 
 echo "Choose Ollama model:"
 echo "  1) llama3.1  (기본값, 균형잡힌 성능)"
@@ -133,6 +129,18 @@ echo "  5) 블로그 (서론-본론-결론)"
 read -r -p "Style [${SUMMARY_STYLE:-1}]: " STYLE_CHOICE
 SUMMARY_STYLE="${STYLE_CHOICE:-${SUMMARY_STYLE:-1}}"
 
+echo "Choose summary language:"
+echo "  1) 한국어 [기본값]"
+echo "  2) English"
+read -r -p "Language [1]: " SUMMARY_LANG_CHOICE
+SUMMARY_LANG_CHOICE="${SUMMARY_LANG_CHOICE:-1}"
+
+if [[ "$SUMMARY_LANG_CHOICE" == "2" ]]; then
+  SUMMARY_LANG="en"
+else
+  SUMMARY_LANG="ko"
+fi
+
 read -r -p "Output directory [${OUTPUT_BASE:-~/Desktop}]: " OUTPUT_INPUT
 # 입력이 비어있으면 기본값 사용
 if [[ -z "$OUTPUT_INPUT" ]]; then
@@ -171,7 +179,6 @@ if [[ -n "$MP3" ]]; then
   USE_EXISTING="${USE_EXISTING:-y}"
   if [[ "$USE_EXISTING" != "y" ]]; then
     rm -f *.mp3
-    echo "Downloading..."
     yt-dlp -x --audio-format mp3 --audio-quality 0 --no-playlist "$URL"
     set +e
     MP3="$(find . -maxdepth 1 -name "*.mp3" -type f 2>/dev/null | head -n 1 | sed 's|^\./||')"
@@ -209,19 +216,29 @@ if [[ -n "$TXT" ]]; then
   USE_EXISTING_TXT="${USE_EXISTING_TXT:-y}"
   if [[ "$USE_EXISTING_TXT" != "y" ]]; then
     rm -f *.txt
-    echo "==> Transcribing with Whisper ($WHISPER_MODEL)..."
-    ARGS=( "$MP3" --task transcribe --model "$WHISPER_MODEL" --output_format txt --verbose False )
-    [[ "$TRANSCRIPT_LANG" != "auto" ]] && ARGS+=( --language "$TRANSCRIPT_LANG" )
-    whisper "${ARGS[@]}"
+    echo "==> Transcribing with whisper.cpp ($WHISPER_MODEL) [5x faster]..."
+    # whisper.cpp 사용 (Python whisper보다 5~10배 빠름)
+    MODEL_FILE="$HOME/.whisper-cpp-models/ggml-${WHISPER_MODEL}.bin"
+    LANG_CODE="${TRANSCRIPT_LANG}"
+    [[ "$LANG_CODE" == "auto" ]] && LANG_CODE="auto"
+    
+    # -nt: 타임스탬프 출력 안 함, -np: 진행률 표시 안 함
+    # stdout만 /dev/null로 (전사 텍스트 숨김), stderr는 표시(모델 로딩 등)
+    whisper-cli -m "$MODEL_FILE" -l "$LANG_CODE" -f "$MP3" -otxt -of "${MP3%.mp3}" -nt -np > /dev/null
     set +e
     TXT="$(find . -maxdepth 1 -name "*.txt" -type f 2>/dev/null | head -n 1 | sed 's|^\./||')"
     set -e
   fi
 else
-  echo "==> Transcribing with Whisper ($WHISPER_MODEL)..."
-  ARGS=( "$MP3" --task transcribe --model "$WHISPER_MODEL" --output_format txt --verbose False )
-  [[ "$TRANSCRIPT_LANG" != "auto" ]] && ARGS+=( --language "$TRANSCRIPT_LANG" )
-  whisper "${ARGS[@]}"
+  echo "==> Transcribing with whisper.cpp ($WHISPER_MODEL) [5x faster]..."
+  # whisper.cpp 사용 (Python whisper보다 5~10배 빠름)
+  MODEL_FILE="$HOME/.whisper-cpp-models/ggml-${WHISPER_MODEL}.bin"
+  LANG_CODE="${TRANSCRIPT_LANG}"
+  [[ "$LANG_CODE" == "auto" ]] && LANG_CODE="auto"
+  
+  # -nt: 타임스탬프 출력 안 함, -np: 진행률 표시 안 함
+  # stdout만 /dev/null로 (전사 텍스트 숨김), stderr는 표시(모델 로딩 등)
+  whisper-cli -m "$MODEL_FILE" -l "$LANG_CODE" -f "$MP3" -otxt -of "${MP3%.mp3}" -nt -np > /dev/null
   set +e
   TXT="$(find . -maxdepth 1 -name "*.txt" -type f 2>/dev/null | head -n 1 | sed 's|^\./||')"
   set -e
@@ -235,42 +252,42 @@ echo "==> Summarizing with Ollama ($OLLAMA_MODEL)..."
 # 스타일별 프롬프트 생성
 case "$SUMMARY_STYLE" in
   1) # 표준
-    if [[ "$TRANSCRIPT_LANG" == "ko" ]]; then
+    if [[ "$SUMMARY_LANG" == "ko" ]]; then
       SUMMARY_PROMPT=$'아래 유튜브 영상의 전사 텍스트를 읽고 실제 내용을 바탕으로 요약해라. 템플릿이나 빈 칸 없이 구체적인 내용으로 채워라.\n\n형식:\n1. 핵심 요약 (7줄): 영상의 주요 내용을 7개 문장으로 요약\n2. 주요 포인트 (5개): 중요한 포인트 5개를 불릿으로 나열\n3. 한 줄 결론: 영상의 핵심 메시지를 한 문장으로 표현\n\n한국어로 작성하고, 실제 영상 내용을 구체적으로 담아라.'
     else
       SUMMARY_PROMPT=$'Read the YouTube video transcript below and summarize the ACTUAL content. Fill in with specific details from the video, not templates or blanks.\n\nFormat:\n1. Core Summary (7 lines): Summarize the main content in 7 sentences\n2. Key Points (5 items): List 5 important points as bullets\n3. One-line Conclusion: Express the core message in one sentence\n\nWrite in English and include specific details from the actual video content.'
     fi
     ;;
   2) # 간단
-    if [[ "$TRANSCRIPT_LANG" == "ko" ]]; then
+    if [[ "$SUMMARY_LANG" == "ko" ]]; then
       SUMMARY_PROMPT=$'다음은 유튜브 영상 전사 텍스트다.\n가장 중요한 핵심 내용 3줄로 간단명료하게 요약해라.\n한국어로 출력해라.'
     else
       SUMMARY_PROMPT=$'This is a YouTube video transcript.\nSummarize the most important points in 3 concise lines.\nRespond in English.'
     fi
     ;;
   3) # 상세
-    if [[ "$TRANSCRIPT_LANG" == "ko" ]]; then
+    if [[ "$SUMMARY_LANG" == "ko" ]]; then
       SUMMARY_PROMPT=$'다음은 유튜브 영상 전사 텍스트다.\n다음 형식으로 상세하게 정리해라:\n1) 전체 개요 (3줄)\n2) 챕터별 주요 내용 (최소 5개 챕터, 각 챕터마다 제목과 2-3줄 설명)\n3) 핵심 인사이트 (5개)\n4) 최종 결론\n한국어로 출력해라.'
     else
       SUMMARY_PROMPT=$'This is a YouTube video transcript.\nProvide a detailed breakdown:\n1) Overview (3 lines)\n2) Chapter-by-chapter breakdown (at least 5 chapters, with title and 2-3 line description each)\n3) Key insights (5 points)\n4) Final conclusion\nRespond in English.'
     fi
     ;;
   4) # 학습용
-    if [[ "$TRANSCRIPT_LANG" == "ko" ]]; then
+    if [[ "$SUMMARY_LANG" == "ko" ]]; then
       SUMMARY_PROMPT=$'다음은 유튜브 영상 전사 텍스트다.\n학습 자료 형식으로 정리해라:\n1) 핵심 질문 5개와 각각의 답변\n2) 중요한 개념/용어 설명 (5개)\n3) 실전 활용 팁 (3개)\n4) 추가 학습이 필요한 주제\n한국어로 출력해라.'
     else
       SUMMARY_PROMPT=$'This is a YouTube video transcript.\nFormat as study material:\n1) 5 key questions and answers\n2) Important concepts/terms explained (5 items)\n3) Practical tips (3 items)\n4) Topics for further study\nRespond in English.'
     fi
     ;;
   5) # 블로그
-    if [[ "$TRANSCRIPT_LANG" == "ko" ]]; then
+    if [[ "$SUMMARY_LANG" == "ko" ]]; then
       SUMMARY_PROMPT=$'다음은 유튜브 영상 전사 텍스트다.\n블로그 포스팅 형식으로 작성해라:\n1) 서론 (흥미를 끄는 도입부, 2-3줄)\n2) 본론 (주요 내용을 3-4개 섹션으로 나눠서 각 섹션마다 제목과 설명)\n3) 결론 (핵심 메시지와 행동 촉구, 2-3줄)\n한국어로 출력해라.'
     else
       SUMMARY_PROMPT=$'This is a YouTube video transcript.\nWrite in blog post format:\n1) Introduction (engaging opening, 2-3 lines)\n2) Body (divide into 3-4 sections with titles and descriptions)\n3) Conclusion (key message and call-to-action, 2-3 lines)\nRespond in English.'
     fi
     ;;
   *) # 기본값 (표준)
-    if [[ "$TRANSCRIPT_LANG" == "ko" ]]; then
+    if [[ "$SUMMARY_LANG" == "ko" ]]; then
       SUMMARY_PROMPT=$'다음은 유튜브 영상 전사 텍스트다.\n1) 핵심 요약 7줄\n2) 주요 포인트 5개 불릿\n3) 한 줄 결론\n한국어로 출력해라.'
     else
       SUMMARY_PROMPT=$'This is a YouTube video transcript.\n1) Core summary in 7 lines\n2) 5 key bullet points\n3) One-line conclusion\nRespond in English.'

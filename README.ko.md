@@ -5,17 +5,18 @@
 
 macOS를 위한 완전히 로컬 환경의 YouTube 음성 변환 및 요약 파이프라인입니다.
 
-이 스크립트는 YouTube 동영상에서 오디오를 다운로드하고, OpenAI Whisper를 사용하여 음성을 텍스트로 변환하며, Ollama를 통해 로컬 LLM으로 요약합니다 — 모두 **오프라인**에서, 클라우드 API 없이 작동합니다.
+이 스크립트는 YouTube 동영상에서 오디오를 다운로드하고, **whisper.cpp**(Python Whisper보다 5배 빠름)를 사용하여 음성을 텍스트로 변환하며, Ollama를 통해 로컬 LLM으로 요약합니다 — 모두 **오프라인**에서, 클라우드 API 없이 작동합니다.
 
 ---
 
 ## 주요 기능
 
 - YouTube에서 오디오 다운로드
-- **Whisper(로컬)**를 사용한 음성-텍스트 변환
+- **whisper.cpp(5-10배 빠름)**를 사용한 음성-텍스트 변환
 - **로컬 LLM(Ollama)**을 사용한 트랜스크립트 요약
 - 자동 의존성 설치 (Homebrew 기반)
-- macOS 및 Apple Silicon 친화적
+- macOS 및 Apple Silicon 친화적 (GPU 가속)
+- **whisper.cpp로 5-10배 빠른 변환**
 - API 키 불필요, 외부 서버 없음
 
 ---
@@ -43,9 +44,9 @@ macOS를 위한 완전히 로컬 환경의 YouTube 음성 변환 및 요약 파�
   외부 명령줄 도구로만 사용됨  
   https://ffmpeg.org/
 
-- **OpenAI Whisper (CLI)** — 음성-텍스트 변환  
+- **whisper.cpp** — 빠른 음성-텍스트 변환 (C++ 구현)  
   라이선스: MIT  
-  https://github.com/openai/whisper
+  https://github.com/ggml-org/whisper.cpp
 
 - **Ollama** — 요약을 위한 로컬 LLM 실행기  
   라이선스: Apache 2.0  
@@ -109,8 +110,7 @@ bash yt_whisper.sh
    * `medium` (769M, ~2배 빠름, ~5GB RAM)
    * `large` (1550M, 1배 속도, ~10GB RAM)
    * `turbo` (가장 빠름, 좋은 품질)
-3. **언어** (`ko`, `en`, 또는 `auto`)
-4. **Ollama 모델**
+3. **Ollama 모델**
 
    * `llama3.1` (기본값, 균형잡힌 성능)
    * `qwen2.5` (기술 요약에 최적)
@@ -118,7 +118,9 @@ bash yt_whisper.sh
    * `llama3.2` (빠른 요약)
    * `phi4` (저사양용)
    * `custom` (직접 모델명 입력)
-5. **출력 디렉토리** (기본값: `~/Desktop`)
+4. **요약 스타일** (표준, 간단, 상세, 학습용, 블로그)
+5. **요약 언어** (한국어 또는 영어)
+6. **출력 디렉토리** (기본값: `~/Desktop`)
 
 ---
 
@@ -129,11 +131,11 @@ bash yt_whisper.sh
    * Homebrew
    * yt-dlp
    * ffmpeg
-   * openai-whisper
+   * whisper-cpp
    * ollama
 2. Ollama 서버가 실행 중이 아니면 시작
 3. YouTube 오디오를 MP3로 다운로드
-4. Whisper로 오디오 변환
+4. whisper.cpp로 오디오 변환 (자동 언어 감지, 5-10배 빠름)
 5. Ollama를 사용하여 트랜스크립트 요약
 6. 결과를 선택한 디렉토리의 타임스탬프가 포함된 폴더에 저장
 
