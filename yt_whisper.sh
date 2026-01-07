@@ -51,6 +51,11 @@ if ! ollama list >/dev/null 2>&1; then
   fi
 fi
 
+# GPU(Metal) 사용 확인
+if sysctl -n machdep.cpu.brand_string 2>/dev/null | grep -q "Apple"; then
+  echo "🚀 Apple Silicon detected - GPU acceleration enabled"
+fi
+
 # ---------- load config ----------
 CONFIG_FILE="${HOME}/.yt_whisper.conf"
 if [[ -f "$CONFIG_FILE" ]]; then
@@ -84,6 +89,10 @@ esac
 
 # Whisper는 자동 언어 감지 사용
 TRANSCRIPT_LANG="auto"
+
+# CPU 코어 수 감지 (whisper-cli 스레드 최적화용)
+CPU_CORES=$(sysctl -n hw.ncpu 2>/dev/null || echo 4)
+echo "💻 CPU cores detected: $CPU_CORES"
 
 echo "Choose Ollama model:"
 echo "  1) llama3.1  (기본값, 균형잡힌 성능)"
@@ -179,7 +188,8 @@ if [[ -n "$MP3" ]]; then
   USE_EXISTING="${USE_EXISTING:-y}"
   if [[ "$USE_EXISTING" != "y" ]]; then
     rm -f *.mp3
-    yt-dlp -x --audio-format mp3 --audio-quality 0 --no-playlist "$URL"
+    echo "📥 Downloading audio (optimized)..."
+    yt-dlp -x --audio-format mp3 --audio-quality 0 --no-playlist --concurrent-fragments 4 "$URL"
     set +e
     MP3="$(find . -maxdepth 1 -name "*.mp3" -type f 2>/dev/null | head -n 1 | sed 's|^\./||')"
     set -e
@@ -189,7 +199,8 @@ if [[ -n "$MP3" ]]; then
     fi
   fi
 else
-  yt-dlp -x --audio-format mp3 --audio-quality 0 --no-playlist "$URL"
+  echo "📥 Downloading audio (optimized)..."
+  yt-dlp -x --audio-format mp3 --audio-quality 0 --no-playlist --concurrent-fragments 4 "$URL"
 
   set +e
   MP3="$(find . -maxdepth 1 -name "*.mp3" -type f 2>/dev/null | head -n 1 | sed 's|^\./||')"
@@ -222,9 +233,10 @@ if [[ -n "$TXT" ]]; then
     LANG_CODE="${TRANSCRIPT_LANG}"
     [[ "$LANG_CODE" == "auto" ]] && LANG_CODE="auto"
     
-    # -nt: 타임스탬프 출력 안 함, -np: 진행률 표시 안 함
+    # -nt: 타임스탬프 출력 안 함, -np: 진행률 표시 안 함, -t: 스레드 수
     # stdout만 /dev/null로 (전사 텍스트 숨김), stderr는 표시(모델 로딩 등)
-    whisper-cli -m "$MODEL_FILE" -l "$LANG_CODE" -f "$MP3" -otxt -of "${MP3%.mp3}" -nt -np > /dev/null
+    echo "🎙️  Transcribing with $CPU_CORES threads..."
+    whisper-cli -m "$MODEL_FILE" -l "$LANG_CODE" -f "$MP3" -t "$CPU_CORES" -otxt -of "${MP3%.mp3}" -nt -np > /dev/null
     set +e
     TXT="$(find . -maxdepth 1 -name "*.txt" -type f 2>/dev/null | head -n 1 | sed 's|^\./||')"
     set -e
@@ -236,9 +248,10 @@ else
   LANG_CODE="${TRANSCRIPT_LANG}"
   [[ "$LANG_CODE" == "auto" ]] && LANG_CODE="auto"
   
-  # -nt: 타임스탬프 출력 안 함, -np: 진행률 표시 안 함
+  # -nt: 타임스탬프 출력 안 함, -np: 진행률 표시 안 함, -t: 스레드 수
   # stdout만 /dev/null로 (전사 텍스트 숨김), stderr는 표시(모델 로딩 등)
-  whisper-cli -m "$MODEL_FILE" -l "$LANG_CODE" -f "$MP3" -otxt -of "${MP3%.mp3}" -nt -np > /dev/null
+  echo "🎙️  Transcribing with $CPU_CORES threads..."
+  whisper-cli -m "$MODEL_FILE" -l "$LANG_CODE" -f "$MP3" -t "$CPU_CORES" -otxt -of "${MP3%.mp3}" -nt -np > /dev/null
   set +e
   TXT="$(find . -maxdepth 1 -name "*.txt" -type f 2>/dev/null | head -n 1 | sed 's|^\./||')"
   set -e
@@ -247,7 +260,8 @@ fi
 [[ -z "${TXT}" ]] && { echo "ERROR: transcript not created."; exit 1; }
 
 # ---------- summarize ----------
-echo "==> Summarizing with Ollama ($OLLAMA_MODEL)..."
+echo "📝 Summarizing with Ollama ($OLLAMA_MODEL)..."
+echo "⏳ This may take a few minutes for long videos..."
 
 # 스타일별 프롬프트 생성
 case "$SUMMARY_STYLE" in
