@@ -35,7 +35,11 @@ ensure_cask() {
 install_brew
 ensure yt-dlp yt-dlp
 ensure ffmpeg ffmpeg
-ensure whisper openai-whisper
+# whisper.cpp (whisper-cli)
+if ! command -v whisper-cli >/dev/null 2>&1; then
+  echo "Installing whisper-cpp..."
+  brew install whisper-cpp
+fi
 ensure ollama ollama
 
 # Ollama server up?
@@ -94,6 +98,29 @@ TRANSCRIPT_LANG="auto"
 CPU_CORES=$(sysctl -n hw.ncpu 2>/dev/null || echo 4)
 echo "💻 CPU cores detected: $CPU_CORES"
 
+# whisper.cpp 모델 파일 확인 및 다운로드
+WHISPER_MODEL_DIR="$HOME/.whisper-cpp-models"
+mkdir -p "$WHISPER_MODEL_DIR"
+
+MODEL_FILE="$WHISPER_MODEL_DIR/ggml-${WHISPER_MODEL}.bin"
+
+if [[ ! -f "$MODEL_FILE" ]]; then
+  echo "📥 Downloading whisper.cpp model: $WHISPER_MODEL..."
+  echo "   This is a one-time download (~${WHISPER_MODEL} size varies)"
+  
+  MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-${WHISPER_MODEL}.bin"
+  
+  if ! curl -L -o "$MODEL_FILE" "$MODEL_URL" 2>&1 | grep -v "^  " ; then
+    echo "ERROR: Failed to download whisper.cpp model"
+    echo "Please download manually from: $MODEL_URL"
+    exit 1
+  fi
+  
+  echo "✅ Model downloaded successfully"
+else
+  echo "✅ whisper.cpp model found: $WHISPER_MODEL"
+fi
+
 echo "Choose Ollama model:"
 echo "  1) llama3.1  (기본값, 균형잡힌 성능)"
 echo "  2) qwen2.5   (기술 요약에 최적)"
@@ -135,6 +162,7 @@ echo "  2) 간단 (3줄 핵심 요약)"
 echo "  3) 상세 (챕터별 구분 + 타임라인)"
 echo "  4) 학습용 (Q&A 형식)"
 echo "  5) 블로그 (서론-본론-결론)"
+echo "  6) 강의 노트 (완전한 이해 가능, 최고 상세) [BEST]"
 read -r -p "Style [${SUMMARY_STYLE:-1}]: " STYLE_CHOICE
 SUMMARY_STYLE="${STYLE_CHOICE:-${SUMMARY_STYLE:-1}}"
 
@@ -149,6 +177,8 @@ if [[ "$SUMMARY_LANG_CHOICE" == "2" ]]; then
 else
   SUMMARY_LANG="ko"
 fi
+
+echo "🌐 Summary language: $SUMMARY_LANG"
 
 read -r -p "Output directory [${OUTPUT_BASE:-~/Desktop}]: " OUTPUT_INPUT
 # 입력이 비어있으면 기본값 사용
@@ -165,7 +195,7 @@ OUTPUT_BASE="${OUTPUT_BASE/#\~/$HOME}"
 mkdir -p "$OUTPUT_BASE"
 
 # 디스크 공간 체크 (최소 1GB 필요)
-AVAILABLE_MB=$(df "$OUTPUT_BASE" | tail -1 | awk '{print int($4/1024)}')
+AVAILABLE_MB=$(df -Pk "$OUTPUT_BASE" | tail -1 | awk '{print int($4/1024)}')
 if [[ $AVAILABLE_MB -lt 1024 ]]; then
   echo "ERROR: Insufficient disk space. Available: ${AVAILABLE_MB}MB, Required: 1024MB"
   exit 1
@@ -300,6 +330,121 @@ case "$SUMMARY_STYLE" in
       SUMMARY_PROMPT=$'This is a YouTube video transcript.\nWrite in blog post format:\n1) Introduction (engaging opening, 2-3 lines)\n2) Body (divide into 3-4 sections with titles and descriptions)\n3) Conclusion (key message and call-to-action, 2-3 lines)\nRespond in English.'
     fi
     ;;
+  6) # 강의 노트 (최고 상세)
+    if [[ "$SUMMARY_LANG" == "ko" ]]; then
+      SUMMARY_PROMPT='
+        아래는 강의/강연 영상의 전사 텍스트이다.
+        요약본만 읽어도 영상을 직접 본 것과 동일한 수준으로
+        논리 흐름, 핵심 주장, 근거, 결론을 완전히 이해할 수 있도록 정리하라.
+
+        ⚠️ 필수 품질 규칙 (반드시 준수):
+        - 추상적인 표현(예: 중요하다, 의미 있다, 필요하다, 새로운 시각)은
+          반드시 구체적 근거(사례, 연도, 수치, 인물, 실험, 기술)와 함께 서술할 것
+        - 원문에 등장하는 핵심 개념, 역사적 사건, 기술적 전환점은 절대 생략하지 말 것
+        - 요약이 아니라 “내용 재구성” 수준으로 작성할 것
+        - 동일한 일반론을 다른 말로 반복하지 말 것
+
+        다음 형식으로 작성하라:
+
+        # [제목]
+
+        ## Executive Summary
+        - 정확히 3–4문장
+        - 배경 → 문제 정의 → 핵심 접근/전환점 → 결론 순서로 작성
+
+        ## Takeaway
+        - 1–2문장
+        - 이 강의/강연이 주장하는 **단 하나의 핵심 메시지**를 명확히 서술
+
+        ## Key Takeaways
+        - 7–10개 불릿
+        - 각 불릿에는 반드시 다음 중 최소 2개 포함:
+          · 구체적 사례
+          · 연도 또는 수치
+          · 실험/연구 결과
+          · 실제 응용 또는 영향
+
+        ## Detailed Summary
+        ### 섹션별 상세 정리:
+        1. 소개 / 배경
+          - 왜 이 강의가 등장했는지
+          - 기존 접근의 한계는 무엇이었는지
+        2. 주요 개념 1
+          - 개념 정의
+          - 실제 사례 또는 실험
+          - 기존 방법과의 차이
+        3. 주요 개념 2
+          (동일 구조 반복)
+        4. 방법론 / 시스템 / 접근법
+          - 사용된 기술, 모델, 실험 환경
+          - 왜 이 선택이 핵심이었는지
+
+        (필요 시 표 형식 사용)
+
+        ## Final Thought
+        - 2–3문장
+        - 분야/사회에 대한 구체적 영향
+        - 남아있는 과제 또는 미해결 질문
+        
+        ⚠️ 모든 내용을 한국어로 작성하라. 영어를 사용하지 말 것.
+      '
+    else
+      SUMMARY_PROMPT='
+        Below is a transcript of a lecture or talk.
+        Summarize it so thoroughly that a reader who ONLY reads the summary
+        can fully understand the original content, logic, and conclusions.
+
+        ⚠️ Mandatory quality rules (must follow):
+        - Avoid vague statements (e.g., “important,” “meaningful,” “novel”) unless
+          they are supported by concrete evidence (examples, years, numbers, experiments, methods)
+        - Do NOT omit key concepts, historical events, or technical turning points from the original content
+        - This is NOT a high-level abstract; reconstruct the content in detail
+        - Do NOT fill sections with generic or repetitive statements
+
+        Use the following format:
+
+        # [Title]
+
+        ## Executive Summary
+        - Exactly 3–4 sentences
+        - Write in this order: background → problem → key approach or turning point → conclusion
+
+        ## Takeaway
+        - 1–2 sentences
+        - Clearly state the single most important claim of the lecture
+
+        ## Key Takeaways
+        - 7–10 bullet points
+        - Each bullet must include at least two of the following:
+          · Concrete examples
+          · Years or numerical values
+          · Experimental or research findings
+          · Real-world applications or impact
+
+        ## Detailed Summary
+        ### Break down by sections:
+        1. Introduction / Background
+          - Why this lecture or research emerged
+          - Limitations of previous approaches
+        2. Main Concept 1
+          - Definition
+          - Supporting example or experiment
+          - How it differs from prior methods
+        3. Main Concept 2
+          (Repeat the same structure)
+        4. Method / System / Approach
+          - Algorithms, models, or experimental setup
+          - Why this approach was necessary or effective
+
+        (Use tables where appropriate)
+
+        ## Final Thought
+        - 2–3 sentences
+        - Concrete impact on the field
+        - Remaining challenges or open questions
+      '
+    fi
+    ;;
   *) # 기본값 (표준)
     if [[ "$SUMMARY_LANG" == "ko" ]]; then
       SUMMARY_PROMPT=$'다음은 유튜브 영상 전사 텍스트다.\n1) 핵심 요약 7줄\n2) 주요 포인트 5개 불릿\n3) 한 줄 결론\n한국어로 출력해라.'
@@ -308,6 +453,9 @@ case "$SUMMARY_STYLE" in
     fi
     ;;
 esac
+
+echo "� Summarizing with Ollama ($OLLAMA_MODEL)..."
+echo "⏳ This may take a few minutes for long videos..."
 
 cat "$TXT" | ollama run "$OLLAMA_MODEL" "$SUMMARY_PROMPT" > summary.txt
 
