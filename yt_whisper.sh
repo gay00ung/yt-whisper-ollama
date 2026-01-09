@@ -35,7 +35,11 @@ ensure_cask() {
 install_brew
 ensure yt-dlp yt-dlp
 ensure ffmpeg ffmpeg
-ensure whisper openai-whisper
+# whisper.cpp (whisper-cli)
+if ! command -v whisper-cli >/dev/null 2>&1; then
+  echo "Installing whisper-cpp..."
+  brew install whisper-cpp
+fi
 ensure ollama ollama
 
 # Ollama server up?
@@ -94,6 +98,29 @@ TRANSCRIPT_LANG="auto"
 CPU_CORES=$(sysctl -n hw.ncpu 2>/dev/null || echo 4)
 echo "💻 CPU cores detected: $CPU_CORES"
 
+# whisper.cpp 모델 파일 확인 및 다운로드
+WHISPER_MODEL_DIR="$HOME/.whisper-cpp-models"
+mkdir -p "$WHISPER_MODEL_DIR"
+
+MODEL_FILE="$WHISPER_MODEL_DIR/ggml-${WHISPER_MODEL}.bin"
+
+if [[ ! -f "$MODEL_FILE" ]]; then
+  echo "📥 Downloading whisper.cpp model: $WHISPER_MODEL..."
+  echo "   This is a one-time download (~${WHISPER_MODEL} size varies)"
+  
+  MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-${WHISPER_MODEL}.bin"
+  
+  if ! curl -L -o "$MODEL_FILE" "$MODEL_URL" 2>&1 | grep -v "^  " ; then
+    echo "ERROR: Failed to download whisper.cpp model"
+    echo "Please download manually from: $MODEL_URL"
+    exit 1
+  fi
+  
+  echo "✅ Model downloaded successfully"
+else
+  echo "✅ whisper.cpp model found: $WHISPER_MODEL"
+fi
+
 echo "Choose Ollama model:"
 echo "  1) llama3.1  (기본값, 균형잡힌 성능)"
 echo "  2) qwen2.5   (기술 요약에 최적)"
@@ -151,6 +178,8 @@ else
   SUMMARY_LANG="ko"
 fi
 
+echo "🌐 Summary language: $SUMMARY_LANG"
+
 read -r -p "Output directory [${OUTPUT_BASE:-~/Desktop}]: " OUTPUT_INPUT
 # 입력이 비어있으면 기본값 사용
 if [[ -z "$OUTPUT_INPUT" ]]; then
@@ -166,7 +195,7 @@ OUTPUT_BASE="${OUTPUT_BASE/#\~/$HOME}"
 mkdir -p "$OUTPUT_BASE"
 
 # 디스크 공간 체크 (최소 1GB 필요)
-AVAILABLE_MB=$(df "$OUTPUT_BASE" | tail -1 | awk '{print int($4/1024)}')
+AVAILABLE_MB=$(df -Pk "$OUTPUT_BASE" | tail -1 | awk '{print int($4/1024)}')
 if [[ $AVAILABLE_MB -lt 1024 ]]; then
   echo "ERROR: Insufficient disk space. Available: ${AVAILABLE_MB}MB, Required: 1024MB"
   exit 1
@@ -354,8 +383,10 @@ case "$SUMMARY_STYLE" in
 
         ## Final Thought
         - 2–3문장
-        - 이 강의가 해당 분야에 남긴 **구체적인 변화**
-        - 남아 있는 한계 또는 향후 과제
+        - 분야/사회에 대한 구체적 영향
+        - 남아있는 과제 또는 미해결 질문
+        
+        ⚠️ 모든 내용을 한국어로 작성하라. 영어를 사용하지 말 것.
       '
     else
       SUMMARY_PROMPT='
@@ -422,6 +453,9 @@ case "$SUMMARY_STYLE" in
     fi
     ;;
 esac
+
+echo "� Summarizing with Ollama ($OLLAMA_MODEL)..."
+echo "⏳ This may take a few minutes for long videos..."
 
 cat "$TXT" | ollama run "$OLLAMA_MODEL" "$SUMMARY_PROMPT" > summary.txt
 
