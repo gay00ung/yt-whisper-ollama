@@ -102,13 +102,26 @@ echo "💻 CPU cores detected: $CPU_CORES"
 WHISPER_MODEL_DIR="$HOME/.whisper-cpp-models"
 mkdir -p "$WHISPER_MODEL_DIR"
 
-MODEL_FILE="$WHISPER_MODEL_DIR/ggml-${WHISPER_MODEL}.bin"
+# 모델명을 실제 파일명으로 매핑
+case "$WHISPER_MODEL" in
+  large)
+    MODEL_FILENAME="ggml-large-v3.bin"
+    ;;
+  turbo)
+    MODEL_FILENAME="ggml-large-v3-turbo.bin"
+    ;;
+  *)
+    MODEL_FILENAME="ggml-${WHISPER_MODEL}.bin"
+    ;;
+esac
+
+MODEL_FILE="$WHISPER_MODEL_DIR/$MODEL_FILENAME"
 
 if [[ ! -f "$MODEL_FILE" ]]; then
-  echo "📥 Downloading whisper.cpp model: $WHISPER_MODEL..."
+  echo "📥 Downloading whisper.cpp model: $WHISPER_MODEL ($MODEL_FILENAME)..."
   echo "   This is a one-time download (~${WHISPER_MODEL} size varies)"
   
-  MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-${WHISPER_MODEL}.bin"
+  MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$MODEL_FILENAME"
   
   if ! curl -L -o "$MODEL_FILE" "$MODEL_URL" 2>&1 | grep -v "^  " ; then
     echo "ERROR: Failed to download whisper.cpp model"
@@ -118,7 +131,7 @@ if [[ ! -f "$MODEL_FILE" ]]; then
   
   echo "✅ Model downloaded successfully"
 else
-  echo "✅ whisper.cpp model found: $WHISPER_MODEL"
+  echo "✅ whisper.cpp model found: $WHISPER_MODEL ($MODEL_FILENAME)"
 fi
 
 echo "Choose Ollama model:"
@@ -259,7 +272,19 @@ if [[ -n "$TXT" ]]; then
     rm -f *.txt
     echo "==> Transcribing with whisper.cpp ($WHISPER_MODEL) [5x faster]..."
     # whisper.cpp 사용 (Python whisper보다 5~10배 빠름)
-    MODEL_FILE="$HOME/.whisper-cpp-models/ggml-${WHISPER_MODEL}.bin"
+    # 모델명을 실제 파일명으로 매핑
+    case "$WHISPER_MODEL" in
+      large)
+        MODEL_FILENAME="ggml-large-v3.bin"
+        ;;
+      turbo)
+        MODEL_FILENAME="ggml-large-v3-turbo.bin"
+        ;;
+      *)
+        MODEL_FILENAME="ggml-${WHISPER_MODEL}.bin"
+        ;;
+    esac
+    MODEL_FILE="$HOME/.whisper-cpp-models/$MODEL_FILENAME"
     LANG_CODE="${TRANSCRIPT_LANG}"
     [[ "$LANG_CODE" == "auto" ]] && LANG_CODE="auto"
     
@@ -274,7 +299,19 @@ if [[ -n "$TXT" ]]; then
 else
   echo "==> Transcribing with whisper.cpp ($WHISPER_MODEL) [5x faster]..."
   # whisper.cpp 사용 (Python whisper보다 5~10배 빠름)
-  MODEL_FILE="$HOME/.whisper-cpp-models/ggml-${WHISPER_MODEL}.bin"
+  # 모델명을 실제 파일명으로 매핑
+  case "$WHISPER_MODEL" in
+    large)
+      MODEL_FILENAME="ggml-large-v3.bin"
+      ;;
+    turbo)
+      MODEL_FILENAME="ggml-large-v3-turbo.bin"
+      ;;
+    *)
+      MODEL_FILENAME="ggml-${WHISPER_MODEL}.bin"
+      ;;
+  esac
+  MODEL_FILE="$HOME/.whisper-cpp-models/$MODEL_FILENAME"
   LANG_CODE="${TRANSCRIPT_LANG}"
   [[ "$LANG_CODE" == "auto" ]] && LANG_CODE="auto"
   

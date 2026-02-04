@@ -108,8 +108,8 @@ bash yt_whisper.sh
    * `base` (74M, ~7배 빠름, ~1GB RAM)
    * `small` (244M, ~4배 빠름, ~2GB RAM) — **권장**
    * `medium` (769M, ~2배 빠름, ~5GB RAM)
-   * `large` (1550M, 1배 속도, ~10GB RAM)
-   * `turbo` (가장 빠름, 좋은 품질)
+   * `large` (1550M, 1배 속도, ~10GB RAM) — large-v3 사용
+   * `turbo` (809M, 가장 빠름, 좋은 품질) — large-v3-turbo 사용
 3. **Ollama 모델**
 
    * `llama3.1` (기본값, 균형잡힌 성능)

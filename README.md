@@ -108,8 +108,8 @@ You will be prompted for:
    * `base` (74M, ~7x speed, ~1GB RAM)
    * `small` (244M, ~4x speed, ~2GB RAM) — **recommended**
    * `medium` (769M, ~2x speed, ~5GB RAM)
-   * `large` (1550M, 1x speed, ~10GB RAM)
-   * `turbo` (fastest, good quality)
+   * `large` (1550M, 1x speed, ~10GB RAM) — uses large-v3
+   * `turbo` (809M, fastest, good quality) — uses large-v3-turbo
 3. **Ollama model**
 
    * `llama3.1` (default, balanced performance)
