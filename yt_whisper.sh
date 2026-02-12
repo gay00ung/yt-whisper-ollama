@@ -34,6 +34,10 @@ ensure_cask() {
 # ---------- bootstrap ----------
 install_brew
 ensure yt-dlp yt-dlp
+
+# yt-dlp 자동 업데이트 (YouTube 403 에러 방지)
+echo "===> Updating yt-dlp to latest version..."
+brew upgrade yt-dlp 2>/dev/null || echo "yt-dlp is already up to date"
 ensure ffmpeg ffmpeg
 # whisper.cpp (whisper-cli)
 if ! command -v whisper-cli >/dev/null 2>&1; then
@@ -135,12 +139,14 @@ else
 fi
 
 echo "Choose Ollama model:"
-echo "  1) llama3.1  (기본값, 균형잡힌 성능)"
-echo "  2) qwen2.5   (기술 요약에 최적)"
-echo "  3) mistral   (빠른 요약)"
-echo "  4) llama3.2  (빠른 요약)"
-echo "  5) phi4      (저사양용)"
-echo "  6) custom    (직접 입력)"
+echo "  1) llama3.1       (기본값, 균형잡힌 성능)"
+echo "  2) qwen2.5        (기술 요약에 최적)"
+echo "  3) mistral        (빠른 요약)"
+echo "  4) llama3.2       (빠른 요약)"
+echo "  5) phi4           (저사양용)"
+echo "  6) qwen2.5-coder:7b (코드 분석 특화, 빠름)"
+echo "  7) qwen3          (최신 qwen 모델)"
+echo "  8) custom         (직접 입력)"
 read -r -p "Model [${OLLAMA_MODEL:-1}]: " OLLAMA_CHOICE
 OLLAMA_CHOICE="${OLLAMA_CHOICE:-1}"
 
@@ -150,7 +156,9 @@ case "$OLLAMA_CHOICE" in
   3) OLLAMA_MODEL="mistral" ;;
   4) OLLAMA_MODEL="llama3.2" ;;
   5) OLLAMA_MODEL="phi4" ;;
-  6) 
+  6) OLLAMA_MODEL="qwen2.5-coder:7b" ;;
+  7) OLLAMA_MODEL="qwen3" ;;
+  8) 
     read -r -p "Enter model name: " CUSTOM_MODEL
     OLLAMA_MODEL="${CUSTOM_MODEL:-llama3.1}"
     ;;
@@ -291,7 +299,8 @@ if [[ -n "$TXT" ]]; then
     # -nt: 타임스탬프 출력 안 함, -np: 진행률 표시 안 함, -t: 스레드 수
     # stdout만 /dev/null로 (전사 텍스트 숨김), stderr는 표시(모델 로딩 등)
     echo "🎙️  Transcribing with $CPU_CORES threads..."
-    whisper-cli -m "$MODEL_FILE" -l "$LANG_CODE" -f "$MP3" -t "$CPU_CORES" -otxt -of "${MP3%.mp3}" -nt -np > /dev/null
+    OUTPUT_BASE="${MP3%.mp3}"
+    whisper-cli -m "$MODEL_FILE" -l "$LANG_CODE" -f "$MP3" -t "$CPU_CORES" -otxt -of "$OUTPUT_BASE" -nt -np > /dev/null
     set +e
     TXT="$(find . -maxdepth 1 -name "*.txt" -type f 2>/dev/null | head -n 1 | sed 's|^\./||')"
     set -e
@@ -318,7 +327,8 @@ else
   # -nt: 타임스탬프 출력 안 함, -np: 진행률 표시 안 함, -t: 스레드 수
   # stdout만 /dev/null로 (전사 텍스트 숨김), stderr는 표시(모델 로딩 등)
   echo "🎙️  Transcribing with $CPU_CORES threads..."
-  whisper-cli -m "$MODEL_FILE" -l "$LANG_CODE" -f "$MP3" -t "$CPU_CORES" -otxt -of "${MP3%.mp3}" -nt -np > /dev/null
+  OUTPUT_BASE="${MP3%.mp3}"
+  whisper-cli -m "$MODEL_FILE" -l "$LANG_CODE" -f "$MP3" -t "$CPU_CORES" -otxt -of "$OUTPUT_BASE" -nt -np > /dev/null
   set +e
   TXT="$(find . -maxdepth 1 -name "*.txt" -type f 2>/dev/null | head -n 1 | sed 's|^\./||')"
   set -e
